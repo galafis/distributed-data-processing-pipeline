@@ -1,5 +1,11 @@
 # Distributed Data Processing Pipeline
 
+![Scala](https://img.shields.io/badge/Scala-2.12-red)
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![Spark](https://img.shields.io/badge/Apache%20Spark-3.5-orange)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue)
+
 [English](#english) | [Português](#português)
 
 ---
