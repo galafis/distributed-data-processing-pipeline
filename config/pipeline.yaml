@@ -1,0 +1,91 @@
+# Distributed Data Processing Pipeline Configuration
+# Author: Gabriel Demetrios Lafis
+
+# Spark Configuration
+spark:
+  master: "local[*]"  # Change to yarn or k8s://... for cluster mode
+  app_name: "DistributedDataPipeline"
+  executor:
+    memory: "4g"
+    cores: 2
+    instances: 3
+  driver:
+    memory: "2g"
+    cores: 1
+  
+  # Spark SQL Configuration
+  sql:
+    adaptive:
+      enabled: true
+      coalesce_partitions: true
+    shuffle:
+      partitions: 200
+    
+  # Delta Lake Configuration
+  delta:
+    log_cache_size: 1000
+    checkpoint_interval: 10
+
+# Pipeline Paths
+pipeline:
+  input:
+    path: "data/raw/transactions"
+    format: "parquet"
+  
+  output:
+    path: "data/processed"
+    format: "delta"
+  
+  stream:
+    input:
+      path: "data/streaming/events"
+      format: "json"
+    output:
+      path: "data/streaming/processed"
+      format: "delta"
+  
+  checkpoint:
+    path: "data/checkpoints"
+
+# Data Quality
+quality:
+  null_threshold: 0.05  # 5% max null values
+  duplicate_threshold: 0.01  # 1% max duplicates
+  
+  validation_rules:
+    - column: "amount"
+      rule: "positive"
+    - column: "quantity"
+      rule: "positive"
+    - column: "customerId"
+      rule: "not_null"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  file:
+    enabled: true
+    path: "logs/pipeline.log"
+    max_bytes: 10485760  # 10MB
+    backup_count: 5
+
+# Monitoring
+monitoring:
+  metrics:
+    enabled: true
+    port: 4040
+  
+  alerts:
+    enabled: true
+    email: "alerts@example.com"
+    slack_webhook: ""
+
+# Airflow
+airflow:
+  schedule_interval: "0 2 * * *"  # Daily at 2 AM
+  max_active_runs: 1
+  retries: 3
+  retry_delay: 300  # 5 minutes
+
