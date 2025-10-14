@@ -801,22 +801,66 @@ Este projeto demonstra as melhores práticas da indústria para construir pipeli
   - Monitoramento de SLA
   - Notificações por email/Slack
 
-### 🚀 Início Rápido
+### 🏗️ Arquitetura
 
-#### Pré-requisitos
+#### Diagrama de Arquitetura do Sistema
 
-```bash
-# Obrigatórios
-- Java 11+
-- Scala 2.12
-- Python 3.8+
-- Apache Spark 3.5+
-- Docker & Docker Compose (para deployment containerizado)
-
-# Opcionais
-- Apache Airflow 2.7+
-- Delta Lake 2.4+
-- Apache Kafka (para streaming)
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Camada de Fontes de Dados                   │
+├─────────────────────────────────────────────────────────────────┤
+│  S3/HDFS  │  Bancos de Dados  │  Kafka  │  APIs  │  Arquivos   │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 Camada de Ingestão e Processamento              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐         ┌──────────────┐                     │
+│  │ Jobs Batch   │         │ Jobs de      │                     │
+│  │  (Scala)     │         │ Streaming    │                     │
+│  │              │         │  (Scala)     │                     │
+│  │ • BatchETL   │         │ • Kafka      │                     │
+│  │ • Transform  │         │ • Tempo Real │                     │
+│  │ • Agregação  │         │ • Janelas    │                     │
+│  └──────────────┘         └──────────────┘                     │
+│         │                         │                             │
+│         └──────────┬──────────────┘                             │
+│                    ▼                                             │
+│         ┌─────────────────────┐                                │
+│         │   Apache Spark      │                                │
+│         │  (Motor Central)    │                                │
+│         └─────────────────────┘                                │
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 Camada de Armazenamento (Delta Lake)            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+│  │    Bronze    │  │     Silver   │  │     Gold     │         │
+│  │ (Dados Brutos)│→ │  (Limpos)    │→ │ (Agregados)  │         │
+│  └──────────────┘  └──────────────┘  └──────────────┘         │
+│                                                                  │
+│  • Transações ACID  • Time Travel  • Evolução de Schema        │
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Camada de Orquestração e Monitoramento             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐         ┌──────────────┐                     │
+│  │   Airflow    │         │ Monitoramento│                     │
+│  │   (DAGs)     │         │  & Alertas   │                     │
+│  │              │         │              │                     │
+│  │ • Agendar    │         │ • Métricas   │                     │
+│  │ • Retry      │         │ • Logs       │                     │
+│  │ • Monitorar  │         │ • Qualidade  │                     │
+│  └──────────────┘         └──────────────┘                     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### 🚀 Início Rápido
@@ -903,14 +947,328 @@ Testado em cluster AWS EMR (3x r5.4xlarge):
 #### 1. **Analytics de E-commerce**
 Processe milhões de transações diariamente para dashboards e business intelligence em tempo real.
 
+```python
+# Exemplo de agregação de vendas em tempo real
+vendas_metricas = stream_vendas
+  .groupBy(window($"timestamp", "1 hora"), $"categoria")
+  .agg(
+    sum("receita").as("receita_hora"),
+    count("id_pedido").as("total_pedidos")
+  )
+```
+
 #### 2. **Processamento de Dados IoT**
 Ingira e processe dados de sensores de milhões de dispositivos em tempo real.
+
+```scala
+// Agregação de sensores IoT
+val metricas_sensores = stream_iot
+  .groupBy($"id_dispositivo", window($"timestamp", "5 minutos"))
+  .agg(
+    avg("temperatura").as("temp_media"),
+    max("temperatura").as("temp_maxima"),
+    stddev("temperatura").as("variancia_temp")
+  )
+```
 
 #### 3. **Data Warehouse Financeiro**
 Construa data warehouse empresarial com garantias ACID e time travel.
 
+```scala
+// Merge Delta Lake para dimensões que mudam lentamente
+tabelaDelta.merge(atualizacoes, "destino.id_conta = origem.id_conta")
+  .whenMatched.updateAll()
+  .whenNotMatched.insertAll()
+  .execute()
+```
+
 #### 4. **Analytics de Logs**
 Processe e analise logs de aplicação em escala para monitoramento e troubleshooting.
+
+```scala
+// Análise e agregação de logs
+val metricas_erro = stream_logs
+  .filter($"nivel" === "ERROR")
+  .groupBy(window($"timestamp", "10 minutos"), $"servico")
+  .agg(count("*").as("total_erros"))
+```
+
+### 📚 Exemplos Detalhados
+
+#### Exemplo 1: Pipeline ETL Batch Completo em Scala
+
+```scala
+package com.gabriellafis.pipeline.jobs
+
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import io.delta.tables._
+
+object ExemploETLCompleto extends BaseSparkJob {
+  
+  override def run(spark: SparkSession, args: Map[String, String]): Unit = {
+    import spark.implicits._
+    
+    val caminhoEntrada = args("caminho-entrada")
+    val caminhoSaida = args("caminho-saida")
+    val dataProcessamento = args("data")
+    
+    // 1. Extrair: Ler de múltiplas fontes
+    val vendasBrutas = spark.read
+      .format("parquet")
+      .load(s"$caminhoEntrada/vendas/data=$dataProcessamento")
+    
+    val clientes = spark.read
+      .format("delta")
+      .load(s"$caminhoEntrada/clientes")
+    
+    val produtos = spark.read
+      .format("json")
+      .load(s"$caminhoEntrada/produtos")
+    
+    // 2. Transformar: Lógica de negócio complexa
+    val vendasEnriquecidas = vendasBrutas
+      .join(clientes, Seq("id_cliente"), "left")
+      .join(broadcast(produtos), Seq("id_produto"), "left")
+      .withColumn("receita", col("quantidade") * col("preco_unitario"))
+      .withColumn("valor_desconto", 
+        when(col("nivel_cliente") === "premium", col("receita") * 0.1)
+        .otherwise(0.0))
+      .withColumn("receita_final", col("receita") - col("valor_desconto"))
+      .withColumn("timestamp_processamento", current_timestamp())
+    
+    // 3. Verificações de Qualidade de Dados
+    val metricasQualidade = vendasEnriquecidas
+      .agg(
+        count("*").as("total_registros"),
+        sum(when(col("id_cliente").isNull, 1).otherwise(0)).as("clientes_nulos"),
+        sum(when(col("receita_final") < 0, 1).otherwise(0)).as("receita_negativa"),
+        avg("receita_final").as("receita_media"),
+        max("receita_final").as("receita_maxima")
+      )
+    
+    metricasQualidade.show()
+    
+    // Falhar se limites de qualidade não forem atingidos
+    val pctClientesNulos = metricasQualidade.select("clientes_nulos").first().getLong(0).toDouble / 
+                           metricasQualidade.select("total_registros").first().getLong(0)
+    
+    require(pctClientesNulos < 0.01, s"Muitos clientes nulos: ${pctClientesNulos * 100}%")
+    
+    // 4. Agregações
+    val resumoDiario = vendasEnriquecidas
+      .groupBy("data_processamento", "categoria_produto", "nivel_cliente")
+      .agg(
+        sum("quantidade").as("quantidade_total"),
+        sum("receita_final").as("receita_total"),
+        count("id_transacao").as("total_transacoes"),
+        avg("receita_final").as("valor_medio_transacao")
+      )
+    
+    // 5. Carregar: Escrever para Delta Lake com particionamento
+    vendasEnriquecidas
+      .write
+      .format("delta")
+      .mode("overwrite")
+      .partitionBy("data_processamento", "categoria_produto")
+      .option("overwriteSchema", "true")
+      .save(s"$caminhoSaida/vendas_enriquecidas")
+    
+    resumoDiario
+      .write
+      .format("delta")
+      .mode("append")
+      .save(s"$caminhoSaida/resumo_diario")
+    
+    println(s"✓ ETL concluído com sucesso para data: $dataProcessamento")
+  }
+}
+```
+
+#### Exemplo 2: Job de Streaming com Kafka
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
+
+# Criar sessão Spark
+spark = SparkSession.builder \
+    .appName("StreamingKafkaJob") \
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .getOrCreate()
+
+# 1. Ler do Kafka
+stream_bruto = spark.readStream \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", "localhost:9092") \
+    .option("subscribe", "eventos-usuarios") \
+    .option("startingOffsets", "latest") \
+    .load()
+
+# 2. Definir schema dos dados
+schema_evento = StructType([
+    StructField("usuario_id", StringType(), True),
+    StructField("tipo_evento", StringType(), True),
+    StructField("timestamp", TimestampType(), True),
+    StructField("valor", DoubleType(), True)
+])
+
+# 3. Parsear JSON e transformar
+stream_parseado = stream_bruto \
+    .selectExpr("CAST(value AS STRING) as json") \
+    .select(from_json(col("json"), schema_evento).alias("dados")) \
+    .select("dados.*") \
+    .withColumn("timestamp_evento", current_timestamp()) \
+    .withColumn("data_evento", to_date(col("timestamp_evento")))
+
+# 4. Agregações em janela
+agregacoes_janela = stream_parseado \
+    .withWatermark("timestamp_evento", "10 minutes") \
+    .groupBy(
+        window(col("timestamp_evento"), "5 minutes", "1 minute"),
+        col("usuario_id"),
+        col("tipo_evento")
+    ) \
+    .agg(
+        count("*").alias("total_eventos"),
+        sum("valor").alias("valor_total"),
+        avg("valor").alias("valor_medio")
+    )
+
+# 5. Escrever para Delta Lake (streaming)
+query = agregacoes_janela \
+    .writeStream \
+    .format("delta") \
+    .outputMode("append") \
+    .option("checkpointLocation", "/tmp/checkpoints/eventos-usuarios") \
+    .trigger(processingTime="30 seconds") \
+    .partitionBy("data_evento") \
+    .start("/delta/eventos-agregados")
+
+query.awaitTermination()
+```
+
+### ❓ FAQ (Perguntas Frequentes)
+
+#### **P: Posso usar apenas Python sem Scala?**
+**R:** Sim! Embora os exemplos incluam Scala para jobs de alto desempenho, você pode usar apenas Python com PySpark. O Scala é recomendado para transformações complexas devido à type safety e performance.
+
+#### **P: Qual é o tamanho mínimo de cluster recomendado?**
+**R:** Para desenvolvimento local, `local[*]` é suficiente. Para produção:
+- **Pequeno:** 3 nodes (1 master + 2 workers) - até 100GB/dia
+- **Médio:** 5-10 nodes - 100GB-1TB/dia
+- **Grande:** 10+ nodes - > 1TB/dia
+
+#### **P: Como lidar com dados atrasados (late data) em streaming?**
+**R:** Use watermarks no Spark Structured Streaming:
+```scala
+df.withWatermark("timestamp", "10 minutes")
+  .groupBy(window($"timestamp", "5 minutes"))
+  .count()
+```
+
+#### **P: Como fazer rollback de dados no Delta Lake?**
+**R:** Use Time Travel:
+```scala
+// Ler versão anterior
+spark.read.format("delta")
+  .option("versionAsOf", 5)
+  .load("/caminho/tabela")
+
+// Restaurar versão anterior
+deltaTable.restoreToVersion(5)
+```
+
+#### **P: Como otimizar performance de joins?**
+**R:** 
+- Use broadcast joins para tabelas pequenas (< 10MB)
+- Particione dados por chaves de join
+- Use bucketing para tabelas grandes
+- Ative AQE (Adaptive Query Execution)
+
+#### **P: Posso rodar sem Docker?**
+**R:** Sim! Instale manualmente:
+- Java 11+
+- Scala 2.12
+- Apache Spark 3.5+
+- Python 3.8+
+
+E siga as instruções de instalação no Quick Start.
+
+### 🔧 Troubleshooting
+
+#### **Problema: OutOfMemoryError no Spark**
+
+**Solução:**
+```bash
+# Aumentar memória do executor
+spark-submit \
+  --executor-memory 8g \
+  --driver-memory 4g \
+  --conf spark.memory.fraction=0.8 \
+  ...
+```
+
+#### **Problema: Jobs muito lentos**
+
+**Checklist:**
+- [ ] Verificar skew de dados (desequilíbrio de partições)
+- [ ] Aumentar `spark.sql.shuffle.partitions` (padrão: 200)
+- [ ] Habilitar AQE: `spark.sql.adaptive.enabled=true`
+- [ ] Usar formato colunar (Parquet/Delta)
+- [ ] Particionar dados adequadamente
+
+#### **Problema: Delta Lake - ConcurrentModificationException**
+
+**Solução:**
+```scala
+// Habilitar otimistic concurrency control
+spark.conf.set("spark.databricks.delta.optimisticTransaction.enabled", "true")
+
+// Ou usar isolation level
+deltaTable.update(
+  condition = expr("id = 123"),
+  set = Map("valor" -> lit(100))
+)
+```
+
+#### **Problema: Airflow DAG não aparece**
+
+**Checklist:**
+- [ ] Verificar sintaxe do Python: `python dags/seu_dag.py`
+- [ ] Verificar logs: `airflow dags list`
+- [ ] Verificar se arquivo está em `$AIRFLOW_HOME/dags/`
+- [ ] Reiniciar scheduler: `airflow scheduler`
+
+#### **Problema: Streaming job fica muito lento**
+
+**Solução:**
+```scala
+// Ajustar trigger interval
+.trigger(Trigger.ProcessingTime("30 seconds"))
+
+// Otimizar shuffle partitions para streaming
+spark.conf.set("spark.sql.shuffle.partitions", "100")
+
+// Usar structured streaming com micro-batches maiores
+.trigger(Trigger.Once())  // Para batch incremental
+```
+
+### 📞 Suporte e Comunidade
+
+**Encontrou um bug?** [Abra uma issue](https://github.com/galafis/distributed-data-processing-pipeline/issues)
+
+**Precisa de ajuda?** Consulte:
+- [DOCUMENTATION.md](DOCUMENTATION.md) - Documentação técnica completa
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Guia de contribuição
+- GitHub Discussions - Perguntas e discussões
+
+**Recursos Adicionais:**
+- [Apache Spark Documentation](https://spark.apache.org/docs/latest/)
+- [Delta Lake Documentation](https://docs.delta.io/)
+- [Apache Airflow Documentation](https://airflow.apache.org/docs/)
 
 ### 🤝 Como Contribuir
 
