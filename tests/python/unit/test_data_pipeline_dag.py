@@ -61,8 +61,7 @@ class TestDataPipelineDAG:
         with pytest.raises(ValueError, match="No parquet files found"):
             check_data_availability(**context)
     
-    @patch('data_pipeline_dag.SparkSession')
-    def test_validate_output_success(self, mock_spark_session):
+    def test_validate_output_success(self):
         """Test successful output validation."""
         # Mock Spark DataFrame
         mock_df = MagicMock()
@@ -73,22 +72,24 @@ class TestDataPipelineDAG:
         # Mock Spark session
         mock_spark = MagicMock()
         mock_spark.read.format.return_value.load.return_value = mock_df
-        mock_spark_session.builder.appName.return_value.getOrCreate.return_value = mock_spark
         
-        context = {
-            'params': {
-                'output_path': '/test/output'
+        # Patch SparkSession in sys.modules
+        with patch('pyspark.sql.SparkSession') as mock_spark_session:
+            mock_spark_session.builder.appName.return_value.getOrCreate.return_value = mock_spark
+            
+            context = {
+                'params': {
+                    'output_path': '/test/output'
+                }
             }
-        }
-        
-        # Should not raise any exception
-        validate_output(**context)
-        
-        # Verify Spark session was stopped
-        mock_spark.stop.assert_called_once()
+            
+            # Should not raise any exception
+            validate_output(**context)
+            
+            # Verify Spark session was stopped
+            mock_spark.stop.assert_called_once()
     
-    @patch('data_pipeline_dag.SparkSession')
-    def test_validate_output_no_records(self, mock_spark_session):
+    def test_validate_output_no_records(self):
         """Test output validation with no records."""
         # Mock Spark DataFrame with zero records
         mock_df = MagicMock()
@@ -97,22 +98,23 @@ class TestDataPipelineDAG:
         # Mock Spark session
         mock_spark = MagicMock()
         mock_spark.read.format.return_value.load.return_value = mock_df
-        mock_spark_session.builder.appName.return_value.getOrCreate.return_value = mock_spark
         
-        context = {
-            'params': {
-                'output_path': '/test/output'
+        with patch('pyspark.sql.SparkSession') as mock_spark_session:
+            mock_spark_session.builder.appName.return_value.getOrCreate.return_value = mock_spark
+            
+            context = {
+                'params': {
+                    'output_path': '/test/output'
+                }
             }
-        }
-        
-        with pytest.raises(AssertionError, match="No records in output"):
-            validate_output(**context)
-        
-        # Verify Spark session was stopped even on error
-        mock_spark.stop.assert_called_once()
+            
+            with pytest.raises(AssertionError, match="No records in output"):
+                validate_output(**context)
+            
+            # Verify Spark session was stopped even on error
+            mock_spark.stop.assert_called_once()
     
-    @patch('data_pipeline_dag.SparkSession')
-    def test_validate_output_null_customers(self, mock_spark_session):
+    def test_validate_output_null_customers(self):
         """Test output validation with null customer IDs."""
         # Mock Spark DataFrame with null customers
         mock_df = MagicMock()
@@ -125,18 +127,20 @@ class TestDataPipelineDAG:
         # Mock Spark session
         mock_spark = MagicMock()
         mock_spark.read.format.return_value.load.return_value = mock_df
-        mock_spark_session.builder.appName.return_value.getOrCreate.return_value = mock_spark
         
-        context = {
-            'params': {
-                'output_path': '/test/output'
+        with patch('pyspark.sql.SparkSession') as mock_spark_session:
+            mock_spark_session.builder.appName.return_value.getOrCreate.return_value = mock_spark
+            
+            context = {
+                'params': {
+                    'output_path': '/test/output'
+                }
             }
-        }
-        
-        with pytest.raises(AssertionError, match="Found null customer IDs"):
-            validate_output(**context)
-        
-        mock_spark.stop.assert_called_once()
+            
+            with pytest.raises(AssertionError, match="Found null customer IDs"):
+                validate_output(**context)
+            
+            mock_spark.stop.assert_called_once()
     
     def test_send_completion_notification(self):
         """Test sending completion notification."""

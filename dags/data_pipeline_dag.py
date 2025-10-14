@@ -12,35 +12,9 @@ Author: Gabriel Demetrios Lafis
 """
 
 from datetime import datetime, timedelta
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from airflow.utils.dates import days_ago
 
-
-default_args = {
-    'owner': 'Gabriel Demetrios Lafis',
-    'depends_on_past': False,
-    'email': ['alerts@example.com'],
-    'email_on_failure': True,
-    'email_on_retry': False,
-    'retries': 3,
-    'retry_delay': timedelta(minutes=5),
-    'execution_timeout': timedelta(hours=2),
-}
-
-
-dag = DAG(
-    'distributed_data_processing_pipeline',
-    default_args=default_args,
-    description='Distributed data processing pipeline with Spark and Delta Lake',
-    schedule_interval='0 2 * * *',  # Daily at 2 AM
-    start_date=days_ago(1),
-    catchup=False,
-    max_active_runs=1,
-    tags=['data-engineering', 'spark', 'etl'],
-)
+# These functions can be imported and tested independently
+# Airflow imports are only needed when actually running the DAG
 
 
 def check_data_availability(**context):
@@ -117,68 +91,103 @@ def send_completion_notification(**context):
     return message
 
 
-# Task 1: Check data availability
-check_data = PythonOperator(
-    task_id='check_data_availability',
-    python_callable=check_data_availability,
-    params={
-        'input_path': '/data/raw/transactions'
-    },
-    dag=dag,
-)
+# Airflow DAG configuration - only load when running in Airflow
+try:
+    from airflow import DAG
+    from airflow.operators.python import PythonOperator
+    from airflow.operators.bash import BashOperator
+    from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+    from airflow.utils.dates import days_ago
+
+    default_args = {
+        'owner': 'Gabriel Demetrios Lafis',
+        'depends_on_past': False,
+        'email': ['alerts@example.com'],
+        'email_on_failure': True,
+        'email_on_retry': False,
+        'retries': 3,
+        'retry_delay': timedelta(minutes=5),
+        'execution_timeout': timedelta(hours=2),
+    }
+
+    dag = DAG(
+        'distributed_data_processing_pipeline',
+        default_args=default_args,
+        description='Distributed data processing pipeline with Spark and Delta Lake',
+        schedule_interval='0 2 * * *',  # Daily at 2 AM
+        start_date=days_ago(1),
+        catchup=False,
+        max_active_runs=1,
+        tags=['data-engineering', 'spark', 'etl'],
+    )
 
 
-# Task 2: Run batch ETL job
-batch_etl = SparkSubmitOperator(
-    task_id='batch_etl_job',
-    application='/opt/pipeline/jars/distributed-data-processing-pipeline-1.0.0.jar',
-    java_class='com.gabriellafis.pipeline.jobs.BatchETLJob',
-    name='batch_etl_job',
-    conf={
-        'spark.sql.adaptive.enabled': 'true',
-        'spark.sql.adaptive.coalescePartitions.enabled': 'true',
-        'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
-    },
-    application_args=[
-        '/data/raw/transactions',
-        '/data/processed'
-    ],
-    dag=dag,
-)
+    # Task 1: Check data availability
+    check_data = PythonOperator(
+        task_id='check_data_availability',
+        python_callable=check_data_availability,
+        params={
+            'input_path': '/data/raw/transactions'
+        },
+        dag=dag,
+    )
 
 
-# Task 3: Validate output
-validate_output_task = PythonOperator(
-    task_id='validate_output',
-    python_callable=validate_output,
-    params={
-        'output_path': '/data/processed'
-    },
-    dag=dag,
-)
+    # Task 2: Run batch ETL job
+    batch_etl = SparkSubmitOperator(
+        task_id='batch_etl_job',
+        application='/opt/pipeline/jars/distributed-data-processing-pipeline-1.0.0.jar',
+        java_class='com.gabriellafis.pipeline.jobs.BatchETLJob',
+        name='batch_etl_job',
+        conf={
+            'spark.sql.adaptive.enabled': 'true',
+            'spark.sql.adaptive.coalescePartitions.enabled': 'true',
+            'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
+        },
+        application_args=[
+            '/data/raw/transactions',
+            '/data/processed'
+        ],
+        dag=dag,
+    )
 
 
-# Task 4: Generate data quality report
-generate_report = BashOperator(
-    task_id='generate_quality_report',
-    bash_command="""
-    echo "Generating data quality report..."
-    python3 /opt/pipeline/scripts/generate_quality_report.py \
-        --input-path /data/processed/transactions_detail \
-        --output-path /data/reports/quality_report_{{ ds }}.html
-    """,
-    dag=dag,
-)
+    # Task 3: Validate output
+    validate_output_task = PythonOperator(
+        task_id='validate_output',
+        python_callable=validate_output,
+        params={
+            'output_path': '/data/processed'
+        },
+        dag=dag,
+    )
 
 
-# Task 5: Send notification
-notify = PythonOperator(
-    task_id='send_completion_notification',
-    python_callable=send_completion_notification,
-    dag=dag,
-)
+    # Task 4: Generate data quality report
+    generate_report = BashOperator(
+        task_id='generate_quality_report',
+        bash_command="""
+        echo "Generating data quality report..."
+        python3 /opt/pipeline/scripts/generate_quality_report.py \
+            --input-path /data/processed/transactions_detail \
+            --output-path /data/reports/quality_report_{{ ds }}.html
+        """,
+        dag=dag,
+    )
 
 
-# Define task dependencies
-check_data >> batch_etl >> validate_output_task >> generate_report >> notify
+    # Task 5: Send notification
+    notify = PythonOperator(
+        task_id='send_completion_notification',
+        python_callable=send_completion_notification,
+        dag=dag,
+    )
+
+
+    # Define task dependencies
+    check_data >> batch_etl >> validate_output_task >> generate_report >> notify
+
+except ImportError:
+    # When Airflow is not installed, we can still import and test the functions
+    pass
 
