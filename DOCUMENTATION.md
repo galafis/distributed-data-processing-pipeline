@@ -460,6 +460,108 @@ docker-compose ps
 
 ---
 
+## Performance Tuning
+
+### Spark Configuration
+
+```scala
+// Recommended production settings
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+spark.conf.set("spark.sql.shuffle.partitions", "200")
+spark.conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+spark.conf.set("spark.sql.files.maxPartitionBytes", "134217728") // 128MB
+```
+
+### Memory Tuning
+
+```bash
+# Executor memory distribution
+# Total = Execution (60%) + Storage (40%)
+# Reserve 300MB for overhead
+
+spark-submit \
+  --executor-memory 8g \
+  --executor-cores 4 \
+  --driver-memory 4g \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.4
+```
+
+### Partitioning Strategy
+
+```scala
+// Write with optimal partitioning
+df.repartition($"date", $"region")
+  .write
+  .partitionBy("date", "region")
+  .format("delta")
+  .save(path)
+
+// For small files, use coalesce
+df.coalesce(10).write.parquet(path)
+```
+
+---
+
+## Common Issues and Solutions
+
+### Issue: OutOfMemoryError
+
+**Symptoms:** Jobs fail with OOM errors
+
+**Solutions:**
+1. Increase executor memory
+2. Reduce `spark.sql.shuffle.partitions`
+3. Use `.persist()` strategically
+4. Enable dynamic allocation
+
+```bash
+spark-submit \
+  --executor-memory 12g \
+  --conf spark.dynamicAllocation.enabled=true \
+  --conf spark.dynamicAllocation.minExecutors=2 \
+  --conf spark.dynamicAllocation.maxExecutors=20
+```
+
+### Issue: Data Skew
+
+**Symptoms:** Some tasks take much longer than others
+
+**Solutions:**
+1. Enable AQE skew join optimization
+2. Use salting technique
+3. Repartition with custom logic
+
+```scala
+// Salt key to distribute skewed data
+val saltedDf = df.withColumn("salt", (rand() * 10).cast("int"))
+  .withColumn("salted_key", concat($"key", lit("_"), $"salt"))
+```
+
+### Issue: Small Files Problem
+
+**Symptoms:** Too many small files causing slow reads
+
+**Solutions:**
+1. Use Delta Lake auto-compact
+2. Optimize after writes
+3. Control file size with maxRecordsPerFile
+
+```scala
+// Optimize table to consolidate files
+deltaTable.optimize()
+  .where("date >= '2024-01-01'")
+  .executeCompaction()
+
+// Z-order for query optimization
+deltaTable.optimize()
+  .executeZOrderBy("country", "product_id")
+```
+
+---
+
 ## Support
 
 For issues and questions:
@@ -471,4 +573,4 @@ For issues and questions:
 
 **Author**: Gabriel Demetrios Lafis  
 **Version**: 1.0.0  
-**Last Updated**: 2024
+**Last Updated**: October 2025
