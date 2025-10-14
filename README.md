@@ -5,6 +5,8 @@
 ![Spark](https://img.shields.io/badge/Apache%20Spark-3.5-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
+![CI](https://github.com/galafis/distributed-data-processing-pipeline/workflows/CI%20Pipeline/badge.svg)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
 [English](#english) | [Português](#português)
 
@@ -97,6 +99,68 @@ This project demonstrates industry best practices for building distributed data 
 
 ### 🏗️ Architecture
 
+#### System Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Data Sources Layer                          │
+├─────────────────────────────────────────────────────────────────┤
+│  S3/HDFS  │  Databases  │  Kafka  │  APIs  │  File Systems    │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Ingestion & Processing Layer                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐         ┌──────────────┐                     │
+│  │ Batch Jobs   │         │ Streaming    │                     │
+│  │  (Scala)     │         │ Jobs (Scala) │                     │
+│  │              │         │              │                     │
+│  │ • BatchETL   │         │ • Kafka      │                     │
+│  │ • Transform  │         │ • Real-time  │                     │
+│  │ • Aggregate  │         │ • Windowed   │                     │
+│  └──────────────┘         └──────────────┘                     │
+│         │                         │                             │
+│         └──────────┬──────────────┘                             │
+│                    ▼                                             │
+│         ┌─────────────────────┐                                │
+│         │   Apache Spark      │                                │
+│         │   (Core Engine)     │                                │
+│         └─────────────────────┘                                │
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Storage Layer (Delta Lake)                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+│  │   Bronze     │  │    Silver    │  │     Gold     │         │
+│  │  (Raw Data)  │→ │  (Cleaned)   │→ │ (Aggregated) │         │
+│  └──────────────┘  └──────────────┘  └──────────────┘         │
+│                                                                  │
+│  • ACID Transactions  • Time Travel  • Schema Evolution        │
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 Orchestration & Monitoring Layer                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐         ┌──────────────┐                     │
+│  │   Airflow    │         │  Monitoring  │                     │
+│  │   (DAGs)     │         │   & Alerts   │                     │
+│  │              │         │              │                     │
+│  │ • Schedule   │         │ • Metrics    │                     │
+│  │ • Retry      │         │ • Logs       │                     │
+│  │ • Monitor    │         │ • Quality    │                     │
+│  └──────────────┘         └──────────────┘                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Project Structure
+
 ```
 distributed-data-processing-pipeline/
 ├── src/
@@ -140,7 +204,15 @@ distributed-data-processing-pipeline/
 │       └── init-db.sh                          # Database initialization
 ├── tests/
 │   ├── scala/                                  # Scala unit tests
+│   │   └── com/gabriellafis/pipeline/
+│   │       ├── core/BaseSparkJobSpec.scala
+│   │       └── jobs/BatchETLJobSpec.scala
 │   └── python/                                 # Python unit tests
+│       ├── unit/
+│       │   ├── test_spark_job_runner.py
+│       │   └── test_data_pipeline_dag.py
+│       └── integration/
+│           └── test_pipeline_integration.py
 ├── notebooks/                                  # Jupyter notebooks for analysis
 ├── data/
 │   ├── raw/                                    # Raw data
@@ -148,6 +220,8 @@ distributed-data-processing-pipeline/
 │   └── checkpoints/                            # Streaming checkpoints
 ├── build.sbt                                   # Scala build configuration
 ├── requirements.txt                            # Python dependencies
+├── pytest.ini                                  # Pytest configuration
+├── CONTRIBUTING.md                             # Contribution guidelines
 └── README.md                                   # This file
 ```
 
@@ -630,6 +704,16 @@ monitoring:
 - **Access Control:** Fine-grained permissions with AWS Lake Formation
 - **Compliance:** GDPR, CCPA ready with data retention policies
 
+### 🤝 Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
 ### 📄 License
 
 MIT License - see [LICENSE](LICENSE) file for details.
@@ -638,11 +722,15 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 **Gabriel Demetrios Lafis**
 
+LinkedIn: [Gabriel Lafis](https://www.linkedin.com/in/gabriel-lafis)  
+GitHub: [@galafis](https://github.com/galafis)
+
 ### 🙏 Acknowledgments
 
 - Apache Spark community
 - Delta Lake team at Databricks
 - Apache Airflow contributors
+- All open-source contributors
 
 ---
 
@@ -664,7 +752,90 @@ Este projeto demonstra as melhores práticas da indústria para construir pipeli
 | **Scala** | Jobs Spark Core | Type safety, performance, programação funcional | Transformações complexas, ETL de alta performance |
 | **Python** | Orquestração & Scripting | Flexibilidade, ecossistema, facilidade de uso | DAGs Airflow, integração com data science |
 
+#### 📦 Capacidades de Processamento em Batch
+
+- **Jobs ETL Escaláveis**
+  - Leitura de múltiplas fontes (S3, HDFS, bancos de dados, APIs)
+  - Transformações complexas com Spark SQL e DataFrames
+  - Escrita para vários destinos com estratégias de particionamento
+  - Suporte para formatos Parquet, ORC, Avro, JSON, CSV
+
+- **Framework de Qualidade de Dados**
+  - Validação de schema
+  - Perfilamento e estatísticas de dados
+  - Verificações de valores nulos e completude
+  - Verificações de integridade referencial
+  - Validação de regras de negócio customizadas
+
+- **Otimização de Performance**
+  - Particionamento inteligente (por data, região, categoria)
+  - Bucketing para otimização de joins
+  - Z-ordering para Delta Lake
+  - Broadcast joins para tabelas pequenas
+  - Execução adaptativa de queries
+
+#### 🌊 Processamento em Streaming
+
+- **Structured Streaming**
+  - Ingestão de dados em tempo real do Kafka, Kinesis
+  - Agregações em janelas (tumbling, sliding, session)
+  - Processamento stateful com watermarks
+  - Semântica exactly-once
+  - Tratamento de dados atrasados
+
+#### 🗄️ Integração com Delta Lake
+
+- **Transações ACID**
+  - Escritas e leituras atômicas
+  - Isolamento serializável
+  - Time travel (versionamento de dados)
+  - Evolução de schema
+  - Operações merge, update, delete
+
+#### 🔧 Orquestração com Apache Airflow
+
+- **Gerenciamento de Workflows**
+  - Agendamento baseado em DAGs
+  - Gerenciamento de dependências
+  - Lógica de retry e tratamento de erros
+  - Monitoramento de SLA
+  - Notificações por email/Slack
+
 ### 🚀 Início Rápido
+
+#### Pré-requisitos
+
+```bash
+# Obrigatórios
+- Java 11+
+- Scala 2.12
+- Python 3.8+
+- Apache Spark 3.5+
+- Docker & Docker Compose (para deployment containerizado)
+
+# Opcionais
+- Apache Airflow 2.7+
+- Delta Lake 2.4+
+- Apache Kafka (para streaming)
+```
+
+### 🚀 Início Rápido
+
+#### Pré-requisitos
+
+```bash
+# Obrigatórios
+- Java 11+
+- Scala 2.12
+- Python 3.8+
+- Apache Spark 3.5+
+- Docker & Docker Compose (para deployment containerizado)
+
+# Opcionais
+- Apache Airflow 2.7+
+- Delta Lake 2.4+
+- Apache Kafka (para streaming)
+```
 
 #### Instalação
 
@@ -695,6 +866,22 @@ spark-submit \
   --date 2024-01-01
 ```
 
+### 🧪 Testes
+
+```bash
+# Executar testes Scala
+sbt test
+
+# Executar testes Python
+pytest tests/python/
+
+# Testes de integração
+./scripts/run_integration_tests.sh
+
+# Testes de performance
+./scripts/run_performance_tests.sh
+```
+
 ### 📊 Benchmarks de Performance
 
 Testado em cluster AWS EMR (3x r5.4xlarge):
@@ -706,6 +893,35 @@ Testado em cluster AWS EMR (3x r5.4xlarge):
 | **Grande** | 1B linhas | 42 minutos | 397K linhas/seg | $6.50 |
 | **Extra Grande** | 10B linhas | 6.5 horas | 427K linhas/seg | $48.00 |
 
+**Performance de Streaming:**
+- **Latência:** < 2 segundos (end-to-end)
+- **Throughput:** 50K eventos/segundo por partição
+- **Backpressure:** Automático com Spark Structured Streaming
+
+### 🎯 Casos de Uso
+
+#### 1. **Analytics de E-commerce**
+Processe milhões de transações diariamente para dashboards e business intelligence em tempo real.
+
+#### 2. **Processamento de Dados IoT**
+Ingira e processe dados de sensores de milhões de dispositivos em tempo real.
+
+#### 3. **Data Warehouse Financeiro**
+Construa data warehouse empresarial com garantias ACID e time travel.
+
+#### 4. **Analytics de Logs**
+Processe e analise logs de aplicação em escala para monitoramento e troubleshooting.
+
+### 🤝 Como Contribuir
+
+Contribuições são bem-vindas! Por favor, leia [CONTRIBUTING.md](CONTRIBUTING.md) para detalhes sobre nosso código de conduta e processo de submissão de pull requests.
+
+1. Fork o projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/MinhaFeature`)
+3. Commit suas mudanças (`git commit -m 'Adiciona MinhaFeature'`)
+4. Push para a branch (`git push origin feature/MinhaFeature`)
+5. Abra um Pull Request
+
 ### 📄 Licença
 
 Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
@@ -713,4 +929,14 @@ Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
 ### 👤 Autor
 
 **Gabriel Demetrios Lafis**
+
+LinkedIn: [Gabriel Lafis](https://www.linkedin.com/in/gabriel-lafis)  
+GitHub: [@galafis](https://github.com/galafis)
+
+### 🙏 Agradecimentos
+
+- Comunidade Apache Spark
+- Equipe Delta Lake na Databricks
+- Contribuidores do Apache Airflow
+- Todos os contribuidores open-source
 
