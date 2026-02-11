@@ -5,7 +5,6 @@
 ![Spark](https://img.shields.io/badge/Apache%20Spark-3.5-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
-![CI](https://github.com/galafis/distributed-data-processing-pipeline/workflows/CI%20Pipeline/badge.svg)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
 [English](#english) | [Português](#português)
